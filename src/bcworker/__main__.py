@@ -11,9 +11,14 @@ import logging
 import signal
 
 from .basecamp import BasecampClient
+from .claude_runner import ClaudeRunner
+from .codesave import CodeSaveManager
 from .config import Config
 from .db import Database
+from .followup import FollowupManager
 from .poller import Poller
+from .sync import Syncer
+from .workspace import ensure_workspace
 
 
 def _configure_logging(level: str) -> None:
@@ -56,7 +61,20 @@ async def main() -> None:
             account_id=config.basecamp_account_id,
             timeout_seconds=config.basecamp_timeout_seconds,
         )
-        poller = Poller(config, client, db)
+
+        ensure_workspace(config)
+        runner = ClaudeRunner(
+            bin_path=config.claude_bin,
+            workspace_dir=config.claude_workspace_dir,
+            config_dir=config.claude_config_dir,
+            timeout_seconds=config.claude_timeout_seconds,
+            permission_mode=config.claude_permission_mode,
+        )
+        syncer = Syncer(client, db, config)
+        codesave = CodeSaveManager(client, db, runner, config)
+        followup = FollowupManager(client, db, runner, config)
+
+        poller = Poller(config, client, db, runner, syncer, codesave, followup)
         logger.info("Worker started (poll interval: %ss)", config.poll_interval_seconds)
         await poller.run(stop)
     finally:

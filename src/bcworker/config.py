@@ -28,6 +28,20 @@ def _get_int(name: str, default: int) -> int:
     return value
 
 
+def _get_int_or_zero(name: str) -> int:
+    """Return a non-negative int env var, defaulting to 0 when unset/blank."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable {name!r} must be an integer, got {raw!r}") from exc
+    if value < 0:
+        raise ValueError(f"Environment variable {name!r} must not be negative, got {value}")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Config:
     """Immutable worker configuration resolved from the environment."""
@@ -42,8 +56,31 @@ class Config:
     # authenticated user has exactly one account.
     basecamp_account_id: str = ""
     basecamp_timeout_seconds: int = 30
+    # The single Basecamp project the worker serves: it takes tasks from here and
+    # reads the skills/documents/CLAUDE.md files here. 0 disables project
+    # filtering (every assigned to-do is processed) — used mostly in tests.
+    basecamp_project_id: int = 0
     log_level: str = "INFO"
     migrations_dir: Path = DEFAULT_MIGRATIONS_DIR
+
+    # Claude Code invocation.
+    claude_bin: str = "claude"
+    claude_timeout_seconds: int = 900
+    claude_workspace_dir: Path = Path("/data/workspace")
+    claude_config_dir: Path = Path("/data/claude")
+    claude_permission_mode: str = "acceptEdits"
+
+    # Docs & Files sync.
+    skills_folder_name: str = "skills"
+    documents_folder_name: str = "documents"
+    sync_interval_seconds: int = 60
+    claude_md_refresh_seconds: int = 1800
+
+    # Follow-up edits and the code-save lifecycle.
+    comment_poll_seconds: int = 30
+    codesave_poll_seconds: int = 30
+    code_save_delay_seconds: int = 300
+    task_max_concurrency: int = 1
 
     @classmethod
     def from_env(cls) -> Config:
@@ -57,9 +94,29 @@ class Config:
             ),
             basecamp_account_id=os.environ.get("BASECAMP_ACCOUNT_ID", "").strip(),
             basecamp_timeout_seconds=_get_int("BASECAMP_TIMEOUT_SECONDS", 30),
+            basecamp_project_id=_get_int_or_zero("BASECAMP_PROJECT_ID"),
             log_level=os.environ.get("LOG_LEVEL", "INFO").strip().upper() or "INFO",
             # Migrations live outside the installed package, so the location is
             # explicit in Docker (set via MIGRATIONS_DIR) and defaults to the
             # repo layout for local runs.
             migrations_dir=Path(os.environ.get("MIGRATIONS_DIR") or DEFAULT_MIGRATIONS_DIR),
+            claude_bin=os.environ.get("CLAUDE_BIN", "claude").strip() or "claude",
+            claude_timeout_seconds=_get_int("CLAUDE_TIMEOUT_SECONDS", 900),
+            claude_workspace_dir=Path(
+                os.environ.get("CLAUDE_WORKSPACE_DIR", "/data/workspace")
+            ),
+            claude_config_dir=Path(os.environ.get("CLAUDE_CONFIG_DIR", "/data/claude")),
+            claude_permission_mode=(
+                os.environ.get("CLAUDE_PERMISSION_MODE", "acceptEdits").strip() or "acceptEdits"
+            ),
+            skills_folder_name=os.environ.get("SKILLS_FOLDER_NAME", "skills").strip() or "skills",
+            documents_folder_name=(
+                os.environ.get("DOCUMENTS_FOLDER_NAME", "documents").strip() or "documents"
+            ),
+            sync_interval_seconds=_get_int("SYNC_INTERVAL_SECONDS", 60),
+            claude_md_refresh_seconds=_get_int("CLAUDE_MD_REFRESH_SECONDS", 1800),
+            comment_poll_seconds=_get_int("COMMENT_POLL_SECONDS", 30),
+            codesave_poll_seconds=_get_int("CODESAVE_POLL_SECONDS", 30),
+            code_save_delay_seconds=_get_int("CODE_SAVE_DELAY_SECONDS", 300),
+            task_max_concurrency=_get_int("TASK_MAX_CONCURRENCY", 1),
         )

@@ -7,10 +7,16 @@
 #   docker compose up -d worker
 #
 # All local state (credentials + SQLite history) lives in the gitignored ./data
-# folder, shared by both services so the login performed by `auth` is picked up
-# by `worker`:
+# folder, shared by all services so the logins performed by `auth` / `claude-auth`
+# are picked up by `worker`:
 #   ./data/basecamp/        -> Basecamp CLI credentials
+#   ./data/claude/          -> Claude Code OAuth credentials
+#   ./data/workspace/       -> the claude working dir (CLAUDE.md, skills, snippets)
 #   ./data/bcworker.sqlite3 -> processed-todo history
+#
+# Two one-time interactive logins are required before the worker is useful:
+#   docker compose run --rm auth          # Basecamp (device-code)
+#   docker compose run --rm claude-auth   # Claude Code (subscription OAuth)
 
 services:
   worker:
@@ -24,6 +30,8 @@ services:
     environment:
       DB_PATH: /data/bcworker.sqlite3
       BASECAMP_CONFIG_DIR: /data/basecamp
+      CLAUDE_CONFIG_DIR: /data/claude
+      CLAUDE_WORKSPACE_DIR: /data/workspace
       # Force the file-based credential store so auth + worker share credentials
       # deterministically (a headless container has no OS keyring anyway).
       BASECAMP_NO_KEYRING: "1"
@@ -48,5 +56,27 @@ services:
       - --device-code
       - --scope
       - full
+    volumes:
+      - ./data:/data
+
+  # One-time Claude Code subscription login. Run with:
+  #   docker compose run --rm claude-auth
+  # Follow the printed URL, authenticate the subscription account, and paste the
+  # code back. Credentials are written to /data/claude and reused by the worker.
+  # NOTE: verify the exact login subcommand for your Claude Code version
+  # (`claude setup-token` vs `claude login`).
+  claude-auth:
+    build:
+      context: .
+      target: runtime
+    profiles:
+      - auth
+    stdin_open: true
+    tty: true
+    environment:
+      CLAUDE_CONFIG_DIR: /data/claude
+    entrypoint:
+      - claude
+      - setup-token
     volumes:
       - ./data:/data

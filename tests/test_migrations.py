@@ -15,17 +15,27 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in rows}
 
 
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r[1] for r in rows}
+
+
 def test_applies_repo_migrations(raw_conn: sqlite3.Connection) -> None:
     applied = apply_migrations(raw_conn)
     assert "0001_init" in applied
+    assert "0002_claude_feature" in applied
     tables = _table_names(raw_conn)
-    assert {"schema_migrations", "processed_todos"} <= tables
+    assert {"schema_migrations", "processed_todos", "synced_files", "code_save_flow"} <= tables
+    # 0002 extends processed_todos with the Claude-feature columns.
+    assert {"description", "session_id", "bucket_id", "result", "last_comment_id"} <= _columns(
+        raw_conn, "processed_todos"
+    )
 
 
 def test_is_idempotent(raw_conn: sqlite3.Connection) -> None:
     first = apply_migrations(raw_conn)
     second = apply_migrations(raw_conn)
-    assert first == ["0001_init"]
+    assert set(first) == {"0001_init", "0002_claude_feature"}
     assert second == []  # nothing new applied on the second run
 
 

@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "mysql": {
+      "command": "npx",
+      "args": ["-y", "@benborla29/mcp-server-mysql"],
+      "env": {
+        "MYSQL_HOST": "${MYSQL_HOST}",
+        "MYSQL_PORT": "${MYSQL_PORT}",
+        "MYSQL_USER": "${MYSQL_USER}",
+        "MYSQL_PASS": "${MYSQL_PASSWORD}",
+        "MYSQL_DB": "",
+        "ALLOW_ALL_DATABASES": "true"
+      }
+    },
+    "spark-sql": {
+      "command": "uvx",
+      "args": ["spark-sql-mcp-server"],
+      "env": {
+        "SPARK_HOST": "${SPARK_HOST}",
+        "SPARK_PORT": "${SPARK_PORT}",
+        "SPARK_USER": "${SPARK_USER}",
+        "SPARK_PASSWORD": "${SPARK_PASSWORD}"
+      }
+    }
+  }
+}

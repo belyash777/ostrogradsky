@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Basecamp-driven worker that dispatches assigned to-dos to Claude Code"
 requires-python = ">=3.14"
 # No third-party runtime dependencies: the worker relies solely on the Python
-# standard library (asyncio, sqlite3, json) and the external `basecamp` CLI.
+# standard library (asyncio, sqlite3, json) and the external `basecamp` / `claude`
+# CLIs (and the MCP servers claude launches). Those are processes, not packages.
 dependencies = []
 
 [project.optional-dependencies]

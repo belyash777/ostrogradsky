@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from conftest import read_cli_records
 
 from bcworker.basecamp import (
     BasecampClient,
@@ -16,8 +17,6 @@ from bcworker.basecamp import (
     _extract_todos,
     _todo_from_dict,
 )
-
-from conftest import read_cli_records
 
 
 def _set_output(data: object, *, ok: bool = True, exit_code: int = 0) -> None:
@@ -257,3 +256,110 @@ async def test_ensure_account_multiple_raises(
     client = make_client()
     with pytest.raises(BasecampError, match="Multiple Basecamp accounts"):
         await client.ensure_account()
+
+
+# --- new to-do fields -----------------------------------------------------
+
+
+def test_todo_from_dict_reads_bucket_and_completed() -> None:
+    todo = _todo_from_dict(
+        {
+            "id": 5,
+            "content": "Task",
+            "completed": True,
+            "bucket": {"id": 88, "name": "Analytics"},
+        }
+    )
+    assert todo.bucket_id == 88
+    assert todo.bucket_name == "Analytics"
+    assert todo.completed is True
+
+
+# --- new project-scoped commands ------------------------------------------
+
+
+async def test_show_todo_command(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output({"id": 5, "description": "notes", "completed": False})
+    client = make_client(account_id="1")
+    data = await client.show_todo(5, 88)
+
+    assert data["description"] == "notes"
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["todos", "show", "5", "--in", "88", "--json"]
+
+
+async def test_is_todo_completed(make_client: Callable[..., BasecampClient]) -> None:
+    _set_output({"id": 5, "completed": True})
+    client = make_client(account_id="1")
+    assert await client.is_todo_completed(5, 88) is True
+
+
+async def test_create_todo_returns_id_and_command(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output({"id": 321})
+    client = make_client(account_id="1")
+    new_id = await client.create_todo(88, "Зберегти код")
+
+    assert new_id == 321
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["todos", "create", "Зберегти код", "--in", "88", "--json"]
+
+
+async def test_create_todo_without_id_raises(
+    make_client: Callable[..., BasecampClient],
+) -> None:
+    _set_output({"noid": True})
+    client = make_client(account_id="1")
+    with pytest.raises(BasecampError, match="did not return an id"):
+        await client.create_todo(88, "x")
+
+
+async def test_list_comments_command(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output([{"id": 1, "content": "hi"}])
+    client = make_client(account_id="1")
+    comments = await client.list_comments(5, 88)
+
+    assert comments == [{"id": 1, "content": "hi"}]
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["comments", "list", "5", "--in", "88", "--json"]
+
+
+async def test_list_files_root_and_vault(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output([{"id": 1, "name": "skills", "type": "folder"}])
+    client = make_client(account_id="1")
+    await client.list_files(88)
+    await client.list_files(88, vault_id=100)
+
+    root, vault = read_cli_records(cli_records)
+    assert root["argv"] == ["files", "list", "--in", "88", "--json"]
+    assert vault["argv"] == ["files", "list", "--in", "88", "--vault", "100", "--json"]
+
+
+async def test_download_file_command(
+    make_client: Callable[..., BasecampClient], cli_records: Path, tmp_path: Path
+) -> None:
+    _set_output({"path": "x"})
+    client = make_client(account_id="1")
+    out = tmp_path / "out"
+    await client.download_file(7, 88, out)
+
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["files", "download", "7", "--in", "88", "--out", str(out), "--json"]
+
+
+async def test_create_comment_threads_project(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output({"id": 1})
+    client = make_client(account_id="1")
+    await client.create_comment(42, "Готово", project_id=88)
+
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["comments", "create", "42", "Готово", "--in", "88", "--json"]

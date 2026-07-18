@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from bcworker.basecamp import BasecampClient
+from bcworker.claude_runner import ClaudeRunner
 from bcworker.db import Database
 
 # A fake `basecamp` binary. It records each invocation's argv and a few relevant
@@ -26,6 +27,7 @@ _RECORDED_ENV = (
     "BASECAMP_NO_KEYRING",
     "BASECAMP_NONINTERACTIVE",
     "BASECAMP_ACCOUNT_ID",
+    "CLAUDE_CONFIG_DIR",
 )
 _FAKE_CLI = """\
 #!{python}
@@ -38,6 +40,7 @@ record = os.environ.get("FAKE_RECORD")
 if record:
     entry = {{
         "argv": sys.argv[1:],
+        "cwd": os.getcwd(),
         "env": {{k: os.environ.get(k) for k in {recorded_env!r}}},
     }}
     with open(record, "a", encoding="utf-8") as fh:
@@ -90,6 +93,35 @@ def make_client(fake_cli: Path, tmp_path: Path) -> Callable[..., BasecampClient]
         return BasecampClient(
             bin_path=str(fake_cli),
             config_dir=tmp_path / "config" / "basecamp",
+            **kwargs,
+        )
+
+    return _factory
+
+
+@pytest.fixture
+def fake_claude(tmp_path: Path) -> Path:
+    """Create an executable fake `claude` binary and return its path."""
+    script = tmp_path / "fake_claude"
+    script.write_text(
+        _FAKE_CLI.format(python=sys.executable, recorded_env=_RECORDED_ENV),
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+@pytest.fixture
+def make_runner(fake_claude: Path, tmp_path: Path) -> Callable[..., ClaudeRunner]:
+    """Return a factory building a ClaudeRunner wired to the fake CLI."""
+
+    def _factory(**kwargs: object) -> ClaudeRunner:
+        workspace = tmp_path / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        return ClaudeRunner(
+            bin_path=str(fake_claude),
+            workspace_dir=workspace,
+            config_dir=tmp_path / "claude",
             **kwargs,
         )
 

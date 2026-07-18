@@ -6,6 +6,7 @@ from pathlib import Path
 
 from bcworker.basecamp import Todo
 from bcworker.db import (
+    FLOW_PROMPTS_CREATED,
     STATUS_ACCEPTED,
     STATUS_CLAIMED,
     STATUS_DONE,
@@ -46,7 +47,58 @@ async def test_pending_todos_lists_only_active(db: Database) -> None:
     await db.mark_error(4, "boom")
 
     pending = await db.pending_todos()
-    assert pending == [(1, "claimed", STATUS_CLAIMED), (2, "accepted", STATUS_ACCEPTED)]
+    assert [(p.todo_id, p.title, p.status) for p in pending] == [
+        (1, "claimed", STATUS_CLAIMED),
+        (2, "accepted", STATUS_ACCEPTED),
+    ]
+
+
+async def test_pending_todos_carries_task_context(db: Database) -> None:
+    await db.try_claim(Todo(id=1, title="Count", description="rows in orders", bucket_id=88))
+    (pending,) = await db.pending_todos()
+    assert pending.description == "rows in orders"
+    assert pending.bucket_id == 88
+    assert pending.task_text == "Count\n\nrows in orders"
+
+
+async def test_mark_done_stores_result(db: Database) -> None:
+    await db.try_claim(Todo(id=1, title="A"))
+    await db.mark_done(1, result="the answer")
+    (result,) = db.connection.execute(
+        "SELECT result FROM processed_todos WHERE todo_id = 1"
+    ).fetchone()
+    assert result == "the answer"
+
+
+async def test_synced_files_upsert_and_delete(db: Database) -> None:
+    await db.upsert_synced_file(55, "skill", 1, "greet.md", "v1", "/ws/greet")
+    assert await db.synced_files_for(55, "skill") == {1: ("greet.md", "v1", "/ws/greet")}
+
+    await db.upsert_synced_file(55, "skill", 1, "greet.md", "v2", "/ws/greet")
+    assert (await db.synced_files_for(55, "skill"))[1][1] == "v2"
+
+    await db.delete_synced_file(55, "skill", 1)
+    assert await db.synced_files_for(55, "skill") == {}
+
+
+async def test_code_save_flow_crud(db: Database) -> None:
+    await db.create_flow(9, 55, "sid", "2026-01-01T00:00:00+00:00")
+    await db.create_flow(9, 55, "sid", "later")  # INSERT OR IGNORE: no duplicate
+    await db.set_flow_prompts(9, 501, 502)
+
+    (flow,) = await db.flows_in_stage(FLOW_PROMPTS_CREATED)
+    assert flow.save_todo_id == 501
+    assert flow.discard_todo_id == 502
+    assert await db.child_todo_ids() == {501, 502}
+
+
+async def test_active_done_todos_excludes_flowed(db: Database) -> None:
+    await db.try_claim(Todo(id=1, title="A", bucket_id=88))
+    await db.mark_done(1)
+    assert await db.active_done_todos() == [(1, 88, None)]
+
+    await db.create_flow(1, 88, "sid", "later")
+    assert await db.active_done_todos() == []
 
 
 async def test_try_claim_is_idempotent(db: Database) -> None:

@@ -43,6 +43,46 @@ def test_reads_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.log_level == "DEBUG"
 
 
+def test_claude_and_sync_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "BASECAMP_PROJECT_ID",
+        "CLAUDE_BIN",
+        "CLAUDE_TIMEOUT_SECONDS",
+        "CODE_SAVE_DELAY_SECONDS",
+        "TASK_MAX_CONCURRENCY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    cfg = Config.from_env()
+    assert cfg.basecamp_project_id == 0
+    assert cfg.claude_bin == "claude"
+    assert cfg.claude_timeout_seconds == 900
+    assert cfg.claude_workspace_dir == Path("/data/workspace")
+    assert cfg.code_save_delay_seconds == 300
+    assert cfg.task_max_concurrency == 1
+
+
+def test_reads_claude_and_sync_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BASECAMP_PROJECT_ID", "12345")
+    monkeypatch.setenv("CLAUDE_BIN", "/usr/local/bin/claude")
+    monkeypatch.setenv("CLAUDE_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("CLAUDE_PERMISSION_MODE", "bypassPermissions")
+    monkeypatch.setenv("SKILLS_FOLDER_NAME", "recipes")
+    monkeypatch.setenv("CODE_SAVE_DELAY_SECONDS", "600")
+    cfg = Config.from_env()
+    assert cfg.basecamp_project_id == 12345
+    assert cfg.claude_bin == "/usr/local/bin/claude"
+    assert cfg.claude_timeout_seconds == 120
+    assert cfg.claude_permission_mode == "bypassPermissions"
+    assert cfg.skills_folder_name == "recipes"
+    assert cfg.code_save_delay_seconds == 600
+
+
+def test_negative_project_id_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BASECAMP_PROJECT_ID", "-1")
+    with pytest.raises(ValueError, match="negative"):
+        Config.from_env()
+
+
 def test_non_integer_interval_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLL_INTERVAL_SECONDS", "abc")
     with pytest.raises(ValueError, match="integer"):

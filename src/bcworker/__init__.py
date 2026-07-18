@@ -1,7 +1,9 @@
 """Basecamp-driven worker package.
 
-Polls Basecamp for to-dos assigned to the CLI account and dispatches each new
-one to a task handler (currently a stub that will later invoke Claude Code).
+Polls Basecamp for to-dos assigned to the CLI account and runs each new one
+through Claude Code (`claude -p`), posting the result back. Also syncs
+skills/documents from Docs & Files, handles follow-up edits, and offers to save
+the used code after completion.
 """
 
 __all__ = ["__version__"]

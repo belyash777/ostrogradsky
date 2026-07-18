@@ -29,6 +29,12 @@ class Todo:
     id: int
     title: str
     description: str = ""
+    # The project (bucket) the to-do lives in. Project-scoped CLI commands
+    # (`todos show`, `comments create`, `files ...`) need it via `--in`.
+    bucket_id: int = 0
+    bucket_name: str = ""
+    # Whether Basecamp reports the to-do as completed (closed by the customer).
+    completed: bool = False
 
     @property
     def task_text(self) -> str:
@@ -53,6 +59,29 @@ def _extract_todos(data: object) -> list[dict]:
     return []
 
 
+def _extract_files(data: object) -> list[dict]:
+    """Pull the list of Docs & Files entries out of a `files list` envelope.
+
+    The CLI may serialise ``data`` as a bare list or as an object with an
+    ``entries``/``files`` key, so all shapes are accepted.
+    """
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("entries", "files"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _coerce_int(value: object) -> int:
+    """Return an int for a real int value (rejecting bool), else 0."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return 0
+
+
 def _todo_from_dict(raw: dict) -> Todo | None:
     """Build a Todo from a raw CLI dict, or None if it lacks a usable id."""
     todo_id = raw.get("id")
@@ -63,7 +92,15 @@ def _todo_from_dict(raw: dict) -> Todo | None:
     # forward-compatible fallback.
     title = str(raw.get("title") or raw.get("content") or "").strip()
     description = str(raw.get("description") or "").strip()
-    return Todo(id=todo_id, title=title, description=description)
+    bucket = raw.get("bucket") if isinstance(raw.get("bucket"), dict) else {}
+    return Todo(
+        id=todo_id,
+        title=title,
+        description=description,
+        bucket_id=_coerce_int(bucket.get("id")),
+        bucket_name=str(bucket.get("name") or "").strip(),
+        completed=bool(raw.get("completed")),
+    )
 
 
 class BasecampClient:
@@ -234,6 +271,74 @@ class BasecampClient:
                 todos.append(todo)
         return todos
 
-    async def create_comment(self, todo_id: int, text: str) -> None:
+    async def create_comment(
+        self, todo_id: int, text: str, project_id: int | None = None
+    ) -> None:
         """Post a comment onto the given to-do (recording)."""
-        await self._run("comments", "create", str(todo_id), text)
+        args = ["comments", "create", str(todo_id), text]
+        if project_id:
+            args += ["--in", str(project_id)]
+        await self._run(*args)
+
+    async def list_comments(self, recording_id: int, project_id: int) -> list[dict]:
+        """Return the comments on a recording (to-do), oldest-to-newest per the CLI."""
+        data = await self._run("comments", "list", str(recording_id), "--in", str(project_id))
+        return [c for c in data if isinstance(c, dict)] if isinstance(data, list) else []
+
+    async def list_todos(self, project_id: int) -> list[Todo]:
+        """List the to-dos in a project (used to make child-to-do creation idempotent)."""
+        data = await self._run("todos", "list", "--in", str(project_id))
+        todos: list[Todo] = []
+        for raw in _extract_todos(data):
+            todo = _todo_from_dict(raw)
+            if todo is not None:
+                todos.append(todo)
+        return todos
+
+    async def show_todo(self, todo_id: int, project_id: int) -> dict:
+        """Return the full to-do payload (includes `description` and `completed`)."""
+        data = await self._run("todos", "show", str(todo_id), "--in", str(project_id))
+        return data if isinstance(data, dict) else {}
+
+    async def is_todo_completed(self, todo_id: int, project_id: int) -> bool:
+        """Return True when Basecamp reports the to-do as completed (closed)."""
+        return bool((await self.show_todo(todo_id, project_id)).get("completed"))
+
+    async def create_todo(
+        self,
+        project_id: int,
+        content: str,
+        list_id: int | None = None,
+        assignee_ids: list[int] | None = None,
+    ) -> int:
+        """Create a to-do in the project and return its new id.
+
+        `list_id`/`assignee_ids` are best-effort: exact flag names must be
+        verified against the CLI. When assignment is unavailable the to-do is
+        still created; the code-save flow relies on an id-skip guard, not on the
+        assignee, so correctness does not depend on it.
+        """
+        args = ["todos", "create", content, "--in", str(project_id)]
+        if list_id:
+            args += ["--list", str(list_id)]
+        for assignee in assignee_ids or []:
+            args += ["--assignee", str(assignee)]
+        data = await self._run(*args)
+        new_id = data.get("id") if isinstance(data, dict) else None
+        if not isinstance(new_id, int) or isinstance(new_id, bool):
+            raise BasecampError(f"todos create did not return an id: {data!r}")
+        return new_id
+
+    async def list_files(self, project_id: int, vault_id: int | None = None) -> list[dict]:
+        """List Docs & Files entries in a project (or inside a given folder/vault)."""
+        args = ["files", "list", "--in", str(project_id)]
+        if vault_id:
+            args += ["--vault", str(vault_id)]
+        data = await self._run(*args)
+        return _extract_files(data)
+
+    async def download_file(self, file_id: int, project_id: int, out_dir: Path) -> None:
+        """Download an uploaded file into ``out_dir``."""
+        await self._run(
+            "files", "download", str(file_id), "--in", str(project_id), "--out", str(out_dir)
+        )

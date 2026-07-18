@@ -7,36 +7,40 @@ Python worker running in Docker drives [`basecamp-cli`](https://github.com/basec
 polls Basecamp every few seconds, and for each **new** to-do assigned to that account it:
 
 1. posts the comment `Задача прийнята, виконую роботу`;
-2. runs the task handler (currently a stub that prints `hello world` — a placeholder for the real
-   Claude Code invocation);
-3. posts the comment `Роботу виконано`.
+2. runs the task through Claude Code (`claude -p`), passing the to-do's Notes;
+3. posts Claude's result back as a comment.
 
-No webhooks — polling only. Only Basecamp **to-dos** are tracked. See [CLAUDE.md](CLAUDE.md) for
-architecture and development notes.
+Claude works with MySQL and Spark/Hadoop (via MCP servers) to compute metrics and A/B tests. The
+worker also **syncs knowledge** from the project's Docs & Files (a `skills` folder → Claude Code
+skills, a `documents` folder → references, a `CLAUDE.md` → workspace guidance), **handles follow-up
+edits** (a new customer comment resumes the task's session), and **offers to save code** after a
+task is completed (two under-to-dos "Зберегти код" / "Не зберігати код").
+
+No webhooks — polling only. Only Basecamp **to-dos** are tracked, scoped to one project. See
+[CLAUDE.md](CLAUDE.md) for architecture and development notes.
 
 ## Quick start
 
 ```bash
-# 1. One-time interactive login (device-code). Open the shown URL, authenticate
-#    as the CLI account, and paste the callback back into the terminal.
-docker compose run --rm auth
+# 1. Two one-time interactive logins.
+docker compose run --rm auth          # Basecamp (device-code)
+docker compose run --rm claude-auth   # Claude Code (subscription OAuth)
 
 # 2. Start the worker
 docker compose up -d worker
 docker compose logs -f worker
 ```
 
-All local state lives in the gitignored `./data` folder:
-`./data/basecamp/` holds the credentials and `./data/bcworker.sqlite3` the processed-todo history.
+All local state lives in the gitignored `./data` folder: `./data/basecamp/` and `./data/claude/`
+hold the credentials, `./data/workspace/` is the claude working dir, and `./data/bcworker.sqlite3`
+the processed-todo history.
 
 ## Configuration (`.env`)
 
-**`.env` is optional.** The worker runs fine without it: container-critical values are set directly
-in [`docker-compose.yml`](docker-compose.yml), and everything else has a built-in default
-(see [`src/bcworker/config.py`](src/bcworker/config.py)). Create a `.env` only to override a
-default, or to set `BASECAMP_ACCOUNT_ID` when the login can access more than one account.
-
-To start from the template:
+Create a `.env` (from the template) to set `BASECAMP_PROJECT_ID`, the MySQL/Spark MCP credentials,
+and any tuning. Container-critical paths are set directly in
+[`docker-compose.yml`](docker-compose.yml); everything else has a built-in default
+(see [`src/bcworker/config.py`](src/bcworker/config.py)).
 
 ```bash
 cp .env.example .env
@@ -44,22 +48,21 @@ cp .env.example .env
 
 Compose loads `.env` automatically (it is declared with `required: false`).
 
-### Variables
+### Key variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `POLL_INTERVAL_SECONDS` | `5` | How often to poll Basecamp for newly assigned to-dos. |
-| `BASECAMP_ACCOUNT_ID` | *(empty)* | Basecamp account id. Leave empty to auto-detect when the login has exactly one account; set it explicitly if several are accessible. |
-| `DB_PATH` | `/data/bcworker.sqlite3` | SQLite database used to de-duplicate processed to-dos. |
-| `BASECAMP_CONFIG_DIR` | `/data/basecamp` | Credentials directory. Must end in `/basecamp` (the CLI reads `$XDG_CONFIG_HOME/basecamp`). |
-| `BASECAMP_BIN` | `basecamp` | Name or absolute path of the Basecamp CLI binary. |
-| `BASECAMP_TIMEOUT_SECONDS` | `30` | Per-command timeout for Basecamp CLI invocations. |
-| `LOG_LEVEL` | `INFO` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
-| `MIGRATIONS_DIR` | `/app/migrations` | Directory of `*.sql` migration files (already set inside the image). |
+| `BASECAMP_PROJECT_ID` | *(empty → 0)* | The single project the worker serves: tasks and skills/documents/CLAUDE.md come from here. Required in production. |
+| `POLL_INTERVAL_SECONDS` | `5` | How often to poll for newly assigned to-dos. |
+| `CLAUDE_TIMEOUT_SECONDS` | `900` | Per-run timeout for `claude -p`. |
+| `CLAUDE_PERMISSION_MODE` | `acceptEdits` | Claude permission mode; use `bypassPermissions` if MCP servers hang on a headless trust prompt. |
+| `SYNC_INTERVAL_SECONDS` / `CLAUDE_MD_REFRESH_SECONDS` | `60` / `1800` | Docs & Files sync and CLAUDE.md refresh cadences. |
+| `CODE_SAVE_DELAY_SECONDS` | `300` | Delay after task completion before posting the save/discard under-to-dos. |
+| `MYSQL_*` | *(empty)* | MySQL MCP credentials (no database pinned — all databases are queryable). |
+| `SPARK_*` | *(empty)* | Spark MCP credentials (host/port + login/password). |
 
-> **When you actually need `.env`:** if the CLI login can access **multiple** Basecamp accounts,
-> auto-detection cannot choose one, so set `BASECAMP_ACCOUNT_ID` (via `.env` or the compose
-> `environment:` block). In every other case the defaults are sufficient.
+The full list (with sync folder names, poll cadences and concurrency) is in
+[`.env.example`](.env.example).
 
 ## Development
 
