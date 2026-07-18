@@ -1,0 +1,52 @@
+# Basecamp-driven worker.
+#
+# One-time setup (interactive device-code login):
+#   docker compose run --rm auth
+#
+# Run the worker:
+#   docker compose up -d worker
+#
+# All local state (credentials + SQLite history) lives in the gitignored ./data
+# folder, shared by both services so the login performed by `auth` is picked up
+# by `worker`:
+#   ./data/basecamp/        -> Basecamp CLI credentials
+#   ./data/bcworker.sqlite3 -> processed-todo history
+
+services:
+  worker:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_PATH: /data/bcworker.sqlite3
+      BASECAMP_CONFIG_DIR: /data/basecamp
+      # Force the file-based credential store so auth + worker share credentials
+      # deterministically (a headless container has no OS keyring anyway).
+      BASECAMP_NO_KEYRING: "1"
+    volumes:
+      - ./data:/data
+
+  # One-time interactive login. Run with: docker compose run --rm auth
+  auth:
+    build:
+      context: .
+      target: runtime
+    profiles:
+      - auth
+    stdin_open: true
+    tty: true
+    environment:
+      BASECAMP_NO_KEYRING: "1"
+    entrypoint:
+      - basecamp
+      - auth
+      - login
+      - --device-code
+      - --scope
+      - full
+    volumes:
+      - ./data:/data

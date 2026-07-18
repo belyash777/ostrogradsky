@@ -1,0 +1,36 @@
+[project]
+name = "bcworker"
+version = "0.1.0"
+description = "Basecamp-driven worker that dispatches assigned to-dos to Claude Code"
+requires-python = ">=3.14"
+# No third-party runtime dependencies: the worker relies solely on the Python
+# standard library (asyncio, sqlite3, json) and the external `basecamp` CLI.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+bcworker = "bcworker.__main__:run"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
