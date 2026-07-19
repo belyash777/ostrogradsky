@@ -31,7 +31,7 @@ def test_creates_layout_and_seeds_template(
     ws = tmp_path / "workspace"
     assert (ws / "documents").is_dir()
     assert (ws / ".claude" / "skills").is_dir()
-    assert (ws / "snippets").is_dir()
+    assert (ws / "results").is_dir()
     assert (tmp_path / "claude").is_dir()
     assert (ws / "CLAUDE.md").read_text() == "baked guidance"
     assert (ws / ".mcp.json").read_text() == "{}"

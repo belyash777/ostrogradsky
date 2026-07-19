@@ -34,7 +34,7 @@ def ensure_workspace(config: Config) -> None:
         workspace,
         workspace / "documents",
         workspace / ".claude" / "skills",
-        workspace / "snippets",
+        workspace / "results",
         config.claude_config_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)

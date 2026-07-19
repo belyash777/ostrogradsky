@@ -86,7 +86,7 @@ class ClaudeRunner:
         """Continue an existing session with a new instruction; return stdout.
 
         Used for customer follow-up edits (the comment text) and for the
-        code-save step (an instruction to save the used code into snippets/).
+        code-save step (an instruction to save the used script into results/).
         """
         return await self._run(
             "-p",

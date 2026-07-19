@@ -27,8 +27,8 @@ Around that core the worker also:
   claude session and posts an updated answer.
 - **Offers to save code**: five minutes after the customer completes a task, the worker creates
   two under-to-dos ("Зберегти код" / "Не зберігати код"). Completing "Зберегти код" (and not
-  "Не зберігати код" — discard wins ties) resumes the session so Claude stores the code it used
-  under `snippets/<todo_id>/` for reuse on similar future tasks.
+  "Не зберігати код" — discard wins ties) resumes the session so Claude stores the query/analysis
+  script it used under `results/` (indexed in `results/INDEX.md`) for reuse on similar future tasks.
 
 Each task gets a deterministic `--session-id` (`uuid5` of the to-do id), persisted in SQLite and
 reused for the edit/code-save resumes.
@@ -130,7 +130,7 @@ docker compose logs -f worker
 
 All local state lives in the single gitignored `./data` folder (bind-mounted at `/data`):
 `./data/basecamp/` and `./data/claude/` hold the credentials, `./data/workspace/` is the claude
-working dir (CLAUDE.md, `.mcp.json`, `documents/`, `.claude/skills/`, `snippets/`), and
+working dir (CLAUDE.md, `.mcp.json`, `documents/`, `.claude/skills/`, `results/`), and
 `./data/bcworker.sqlite3` the history. The `auth`, `claude-auth` and `worker` services share it, so
 the logins are picked up by the worker automatically.
 

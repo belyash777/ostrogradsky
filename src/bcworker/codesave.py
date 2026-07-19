@@ -4,8 +4,9 @@ When the customer completes a task, five minutes later the worker creates two
 under-to-dos — "Зберегти код" / "Не зберігати код" — and watches which one the
 customer completes. Basecamp has no buttons, so completing an under-to-do is the
 signal. If the customer picks "save" (and not "discard"), the task's claude
-session is resumed with an instruction to store the code it used under
-``snippets/<todo_id>/`` for reuse on similar future tasks.
+session is resumed with an instruction to store the query/analysis script it used
+in ``results/`` (with an index entry in ``results/INDEX.md``) for reuse on similar
+future tasks.
 
 ``tick`` is idempotent and takes the current time explicitly, so it can be
 driven on a slow cadence from the poll loop and unit-tested with an injected
@@ -144,9 +145,12 @@ class CodeSaveManager:
     async def _do_save(self, todo_id: int, session_id: str) -> None:
         """Resume the task's session and ask claude to persist the used code."""
         instruction = (
-            f"Save the code you used for this task into snippets/{todo_id}/ in the workspace, "
-            "with a short README describing the task and the MySQL/Spark tables it touched, "
-            "so it can be reused for similar future tasks."
+            "Save the query/analysis script you used for this task into the results/ folder "
+            "as a descriptively-named file (results/<name>.sql for SQL, results/<name>.py for "
+            "PySpark). Begin the file with a short comment in English describing what it does, "
+            "so the script explains itself when read later. Then add or update a one-line entry "
+            "in results/INDEX.md mapping the file name to that description, so it serves as a "
+            "hint index for similar future tasks."
         )
         try:
             await self._runner.resume(session_id, instruction)

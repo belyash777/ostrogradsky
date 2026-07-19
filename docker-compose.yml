@@ -11,7 +11,7 @@
 # are picked up by `worker`:
 #   ./data/basecamp/        -> Basecamp CLI credentials
 #   ./data/claude/          -> Claude Code OAuth credentials
-#   ./data/workspace/       -> the claude working dir (CLAUDE.md, skills, snippets)
+#   ./data/workspace/       -> the claude working dir (CLAUDE.md, skills, results)
 #   ./data/bcworker.sqlite3 -> processed-todo history
 #
 # Two one-time interactive logins are required before the worker is useful:

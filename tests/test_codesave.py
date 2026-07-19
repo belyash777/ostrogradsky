@@ -161,6 +161,7 @@ async def test_save_decision_resumes_session(db: Database) -> None:
     assert await _stage(db, 1) == FLOW_SAVED
     assert len(runner.resumed) == 1
     assert runner.resumed[0][0] == flow.session_id
+    assert "results/" in runner.resumed[0][1]
 
 
 async def test_discard_wins_when_both_completed(db: Database) -> None:
