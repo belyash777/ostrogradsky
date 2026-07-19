@@ -54,11 +54,6 @@ class FakeRunner:
         return self.result
 
 
-class NoopSyncer:
-    async def sync_project(self, project_id: int) -> None: ...
-    async def sync_claude_md(self, project_id: int) -> None: ...
-
-
 class CountingManager:
     def __init__(self) -> None:
         self.ticks = 0
@@ -88,7 +83,6 @@ def _make_poller(
         client,
         db,
         runner or FakeRunner(),
-        NoopSyncer(),
         codesave or CountingManager(),
         followup or CountingManager(),
     )
@@ -201,20 +195,6 @@ async def test_empty_result_falls_back_to_completed_message(db: Database) -> Non
     assert (1, COMPLETED_MESSAGE) in client.comments
 
 
-async def test_skips_code_save_child_todos(db: Database) -> None:
-    # Register two under-to-dos via a code-save flow; they must never be ingested.
-    await db.create_flow(9, 55, "sid", "2026-01-01T00:00:00+00:00")
-    await db.set_flow_prompts(9, 501, 502)
-    client = FakeClient([Todo(id=501, title="Зберегти код")])
-    poller = _make_poller(db, client)
-
-    await poller._poll_once(asyncio.Event())
-    await poller._await_inflight()
-
-    assert _status(db, 501) is None
-    assert client.comments == []
-
-
 async def test_periodic_concerns_are_cadence_gated(db: Database) -> None:
     client = FakeClient([])
     followup = CountingManager()
@@ -222,6 +202,7 @@ async def test_periodic_concerns_are_cadence_gated(db: Database) -> None:
 
     await poller._poll_once(asyncio.Event())
     await poller._poll_once(asyncio.Event())  # within the poll interval
+    await poller._await_inflight()
 
     assert followup.ticks == 1  # second tick gated by comment_poll_seconds
 

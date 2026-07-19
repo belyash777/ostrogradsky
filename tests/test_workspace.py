@@ -21,9 +21,10 @@ def test_creates_layout_and_seeds_template(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     template = tmp_path / "template"
-    template.mkdir()
+    (template / "documents").mkdir(parents=True)
     (template / "CLAUDE.md").write_text("baked guidance", encoding="utf-8")
     (template / ".mcp.json").write_text("{}", encoding="utf-8")
+    (template / "documents" / "MYSQL.md").write_text("baked mysql", encoding="utf-8")
     monkeypatch.setenv("WORKSPACE_TEMPLATE_DIR", str(template))
 
     ensure_workspace(_config(tmp_path))
@@ -35,20 +36,41 @@ def test_creates_layout_and_seeds_template(
     assert (tmp_path / "claude").is_dir()
     assert (ws / "CLAUDE.md").read_text() == "baked guidance"
     assert (ws / ".mcp.json").read_text() == "{}"
+    assert (ws / "documents" / "MYSQL.md").read_text() == "baked mysql"
 
 
-def test_does_not_overwrite_existing_claude_md(
+def test_refreshes_claude_md_and_mysql_from_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = tmp_path / "template"
+    (template / "documents").mkdir(parents=True)
+    (template / "CLAUDE.md").write_text("new guidance", encoding="utf-8")
+    (template / "documents" / "MYSQL.md").write_text("new mysql", encoding="utf-8")
+    monkeypatch.setenv("WORKSPACE_TEMPLATE_DIR", str(template))
+
+    ws = tmp_path / "workspace"
+    (ws / "documents").mkdir(parents=True)
+    (ws / "CLAUDE.md").write_text("stale guidance", encoding="utf-8")
+    (ws / "documents" / "MYSQL.md").write_text("stale mysql", encoding="utf-8")
+
+    ensure_workspace(_config(tmp_path))
+
+    assert (ws / "CLAUDE.md").read_text() == "new guidance"
+    assert (ws / "documents" / "MYSQL.md").read_text() == "new mysql"
+
+
+def test_seeds_mcp_json_only_when_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     template = tmp_path / "template"
     template.mkdir()
-    (template / "CLAUDE.md").write_text("baked", encoding="utf-8")
+    (template / ".mcp.json").write_text("{}", encoding="utf-8")
     monkeypatch.setenv("WORKSPACE_TEMPLATE_DIR", str(template))
 
     ws = tmp_path / "workspace"
     ws.mkdir()
-    (ws / "CLAUDE.md").write_text("synced from basecamp", encoding="utf-8")
+    (ws / ".mcp.json").write_text('{"local": true}', encoding="utf-8")
 
     ensure_workspace(_config(tmp_path))
 
-    assert (ws / "CLAUDE.md").read_text() == "synced from basecamp"
+    assert (ws / ".mcp.json").read_text() == '{"local": true}'

@@ -64,12 +64,7 @@ class FollowupManager:
     async def _worker_person_id(self) -> str | None:
         """The worker (CLI account) person id, used to skip its own comments."""
         if not self._worker_id_resolved:
-            try:
-                status = await self._client.auth_status()
-                raw = status.get("user_id") or status.get("person_id") or status.get("identity_id")
-                self._worker_id = str(raw) if raw is not None else None
-            except BasecampError:
-                self._worker_id = None
+            self._worker_id = await self._client.whoami()
             self._worker_id_resolved = True
         return self._worker_id
 

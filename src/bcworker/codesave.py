@@ -1,12 +1,13 @@
 """The post-completion "save the code?" lifecycle.
 
-When the customer completes a task, five minutes later the worker creates two
-under-to-dos — "Зберегти код" / "Не зберігати код" — and watches which one the
-customer completes. Basecamp has no buttons, so completing an under-to-do is the
-signal. If the customer picks "save" (and not "discard"), the task's claude
-session is resumed with an instruction to store the query/analysis script it used
-in ``results/`` (with an index entry in ``results/INDEX.md``) for reuse on similar
-future tasks.
+When the customer completes a task, five minutes later the worker posts one
+comment on it — asking whether to save the code it used — and watches for the
+customer's answer. The answer can be a reply comment (a word like "так"/"ні" or
+an emoji) or a boost (reaction) on the prompt; :mod:`bcworker.decision` maps it
+to save / discard / unclear. If the customer says yes (and not no), the task's
+claude session is resumed with an instruction to store the query/analysis script
+it used in ``results/`` (with an index entry in ``results/INDEX.md``) for reuse
+on similar future tasks. Silence past a deadline resolves the flow as discarded.
 
 ``tick`` is idempotent and takes the current time explicitly, so it can be
 driven on a slow cadence from the poll loop and unit-tested with an injected
@@ -18,6 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
+from . import decision
 from .basecamp import BasecampClient, BasecampError
 from .claude_runner import ClaudeError, ClaudeRunner, session_id_for
 from .config import Config
@@ -27,28 +29,40 @@ from .db import (
     FLOW_PROMPTS_CREATED,
     FLOW_SAVED,
     FLOW_SAVING,
+    CodeSaveFlow,
     Database,
 )
 
 logger = logging.getLogger(__name__)
 
-# Under-to-do titles (Ukrainian: they are text for the customer). The task id is
-# appended so the prompt names its task and creation stays idempotent (a crash
-# between the two `create_todo` calls will not duplicate them).
-SAVE_TITLE = "Зберегти код"
-DISCARD_TITLE = "Не зберігати код"
+# The prompt posted on the completed task (Ukrainian: it is text for the
+# customer). Kept plain so a "так"/"ні"/👍 reply — or a boost on it — is natural.
+PROMPT_MESSAGE = (
+    "Зберегти код цієї задачі для повторного використання в майбутньому? "
+    "Відповідь «так» (чи 👍) — збережу, «ні» — ні."
+)
 
 
-def _save_title(todo_id: int) -> str:
-    return f"{SAVE_TITLE} (#{todo_id})"
+def _comment_id(item: dict) -> int:
+    value = item.get("id")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return 0
 
 
-def _discard_title(todo_id: int) -> str:
-    return f"{DISCARD_TITLE} (#{todo_id})"
+def _creator_id(item: dict) -> str:
+    creator = item.get("creator")
+    if isinstance(creator, dict) and creator.get("id") is not None:
+        return str(creator.get("id"))
+    return ""
+
+
+def _content(item: dict) -> str:
+    return str(item.get("content") or item.get("body") or "").strip()
 
 
 class CodeSaveManager:
-    """Detects task completion and drives the save/discard under-to-dos."""
+    """Detects task completion and drives the save/discard comment prompt."""
 
     def __init__(
         self,
@@ -61,15 +75,24 @@ class CodeSaveManager:
         self._db = db
         self._runner = runner
         self._config = config
+        self._worker_id: str | None = None
+        self._worker_id_resolved = False
 
     def _project_id(self, bucket_id: int) -> int:
         return bucket_id or self._config.basecamp_project_id
 
+    async def _worker_person_id(self) -> str | None:
+        """The worker (CLI account) person id, used to skip its own comments/boosts."""
+        if not self._worker_id_resolved:
+            self._worker_id = await self._client.whoami()
+            self._worker_id_resolved = True
+        return self._worker_id
+
     async def tick(self, now: datetime) -> None:
         """Advance every code-save flow by one step (safe to call repeatedly)."""
         await self._detect_completions(now)
-        await self._create_prompts(now)
-        await self._resolve_decisions()
+        await self._post_prompt(now)
+        await self._resolve_decisions(now)
         await self._resume_stuck_saves()
 
     async def _detect_completions(self, now: datetime) -> None:
@@ -86,51 +109,94 @@ class CodeSaveManager:
             except BasecampError:
                 logger.warning("Completion check failed for #%s", todo_id, exc_info=True)
 
-    async def _create_prompts(self, now: datetime) -> None:
-        """After the delay, post the two under-to-dos for a flow (idempotently)."""
+    async def _post_prompt(self, now: datetime) -> None:
+        """After the delay, post the "save the code?" comment (idempotently)."""
         for flow in await self._db.flows_in_stage(FLOW_AWAITING_DELAY):
             if datetime.fromisoformat(flow.prompt_due_at) > now:
                 continue  # not due yet
-            save_title = _save_title(flow.todo_id)
-            discard_title = _discard_title(flow.todo_id)
+            deadline = (
+                now + timedelta(seconds=self._config.code_save_reply_timeout_seconds)
+            ).isoformat()
             try:
-                # Reuse existing under-to-dos if a prior attempt created them but
-                # crashed before persisting their ids.
-                existing = {t.title: t.id for t in await self._client.list_todos(flow.project_id)}
-                save_id = existing.get(save_title) or await self._client.create_todo(
-                    flow.project_id, save_title
+                # Reuse the prompt if a prior attempt posted it but crashed before
+                # persisting its id, so a restart never double-asks.
+                comment_id = await self._existing_prompt_id(
+                    flow
+                ) or await self._client.create_comment(
+                    flow.todo_id, PROMPT_MESSAGE, flow.project_id
                 )
-                discard_id = existing.get(discard_title) or await self._client.create_todo(
-                    flow.project_id, discard_title
-                )
-                await self._db.set_flow_prompts(flow.todo_id, save_id, discard_id)
+                if comment_id is None:
+                    # Without the prompt's id there is nothing to anchor the reply
+                    # to; leave the flow armed and retry on the next tick.
+                    logger.warning(
+                        "Code-save prompt for #%s returned no comment id; will retry",
+                        flow.todo_id,
+                    )
+                    continue
+                await self._db.set_flow_prompt(flow.todo_id, comment_id, deadline)
                 logger.info("Posted code-save prompt for #%s", flow.todo_id)
             except BasecampError as exc:
                 logger.warning("Could not post code-save prompt for #%s", flow.todo_id)
                 await self._db.fail_flow(flow.todo_id, str(exc))
 
-    async def _resolve_decisions(self) -> None:
-        """Watch the under-to-dos and act once the customer completes one."""
+    async def _existing_prompt_id(self, flow: CodeSaveFlow) -> int | None:
+        """Return the id of an already-posted prompt comment on the task, if any."""
+        worker_id = await self._worker_person_id()
+        comments = await self._client.list_comments(flow.todo_id, flow.project_id)
+        return max(
+            (
+                _comment_id(c)
+                for c in comments
+                if _creator_id(c) == worker_id and _content(c) == PROMPT_MESSAGE
+            ),
+            default=None,
+        )
+
+    async def _resolve_decisions(self, now: datetime) -> None:
+        """Read the customer's reply/boost and act on the first clear answer."""
+        worker_id = await self._worker_person_id()
         for flow in await self._db.flows_in_stage(FLOW_PROMPTS_CREATED):
-            if flow.save_todo_id is None or flow.discard_todo_id is None:
+            if flow.prompt_comment_id is None:
                 continue
             try:
-                discard_done = await self._client.is_todo_completed(
-                    flow.discard_todo_id, flow.project_id
-                )
-                save_done = await self._client.is_todo_completed(
-                    flow.save_todo_id, flow.project_id
-                )
+                verdict = await self._read_decision(flow, worker_id)
             except BasecampError:
                 logger.warning("Decision check failed for #%s", flow.todo_id, exc_info=True)
                 continue
 
-            # "Do not save" wins if both were completed.
-            if discard_done:
+            if verdict == decision.DISCARD:
                 await self._db.resolve_flow(flow.todo_id, FLOW_DISCARDED, "discard")
                 logger.info("Code for #%s discarded by customer", flow.todo_id)
-            elif save_done:
+            elif verdict == decision.SAVE:
                 await self._save_code(flow.todo_id, flow.session_id)
+            elif flow.reply_deadline and datetime.fromisoformat(flow.reply_deadline) <= now:
+                await self._db.resolve_flow(flow.todo_id, FLOW_DISCARDED, "timeout")
+                logger.info("Code-save prompt for #%s timed out unanswered; not saved", flow.todo_id)
+
+    async def _read_decision(self, flow: CodeSaveFlow, worker_id: str | None) -> str | None:
+        """Classify the customer's answer to a flow's prompt (discard wins ties)."""
+        assert flow.prompt_comment_id is not None  # guarded by the caller
+        verdict: str | None = None
+
+        # A boost (reaction) on the prompt — the simplest "smiley" answer.
+        for boost in await self._client.list_boosts(flow.prompt_comment_id, flow.project_id):
+            if _creator_id(boost) == worker_id:
+                continue
+            if decision.classify_boost(_content(boost)) == decision.DISCARD:
+                return decision.DISCARD
+            verdict = decision.SAVE
+
+        # A reply comment posted after the prompt.
+        comments = await self._client.list_comments(flow.todo_id, flow.project_id)
+        for comment in sorted(comments, key=_comment_id):
+            if _comment_id(comment) <= flow.prompt_comment_id or _creator_id(comment) == worker_id:
+                continue
+            answer = decision.classify(_content(comment))
+            if answer == decision.DISCARD:
+                return decision.DISCARD
+            if answer == decision.SAVE:
+                verdict = decision.SAVE
+        return verdict
 
     async def _resume_stuck_saves(self) -> None:
         """Retry any flow left in `saving` (e.g. crash mid-resume)."""

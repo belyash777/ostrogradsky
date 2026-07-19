@@ -66,14 +66,12 @@ def test_reads_claude_and_sync_overrides(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("CLAUDE_BIN", "/usr/local/bin/claude")
     monkeypatch.setenv("CLAUDE_TIMEOUT_SECONDS", "120")
     monkeypatch.setenv("CLAUDE_PERMISSION_MODE", "bypassPermissions")
-    monkeypatch.setenv("SKILLS_FOLDER_NAME", "recipes")
     monkeypatch.setenv("CODE_SAVE_DELAY_SECONDS", "600")
     cfg = Config.from_env()
     assert cfg.basecamp_project_id == 12345
     assert cfg.claude_bin == "/usr/local/bin/claude"
     assert cfg.claude_timeout_seconds == 120
     assert cfg.claude_permission_mode == "bypassPermissions"
-    assert cfg.skills_folder_name == "recipes"
     assert cfg.code_save_delay_seconds == 600
 
 

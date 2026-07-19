@@ -90,6 +90,24 @@ async def test_is_authenticated_false_on_error(
     assert await client.is_authenticated() is False
 
 
+async def test_whoami_returns_person_id(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output({"id": 52732594, "name": "Остроградський"})
+    client = make_client(account_id="1")
+    assert await client.whoami() == "52732594"
+
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["people", "show", "me", "--json"]
+
+
+async def test_whoami_none_on_error(make_client: Callable[..., BasecampClient]) -> None:
+    os.environ["FAKE_EXIT"] = "1"
+    os.environ["FAKE_STDERR"] = "boom"
+    client = make_client()
+    assert await client.whoami() is None
+
+
 async def test_nonzero_exit_raises(make_client: Callable[..., BasecampClient]) -> None:
     os.environ["FAKE_EXIT"] = "3"
     os.environ["FAKE_STDERR"] = "kaboom"
@@ -301,11 +319,11 @@ async def test_create_todo_returns_id_and_command(
 ) -> None:
     _set_output({"id": 321})
     client = make_client(account_id="1")
-    new_id = await client.create_todo(88, "Зберегти код")
+    new_id = await client.create_todo(88, "Нова задача")
 
     assert new_id == 321
     (rec,) = read_cli_records(cli_records)
-    assert rec["argv"] == ["todos", "create", "Зберегти код", "--in", "88", "--json"]
+    assert rec["argv"] == ["todos", "create", "Нова задача", "--in", "88", "--json"]
 
 
 async def test_create_todo_without_id_raises(
@@ -329,37 +347,24 @@ async def test_list_comments_command(
     assert rec["argv"] == ["comments", "list", "5", "--in", "88", "--json"]
 
 
-async def test_list_files_root_and_vault(
-    make_client: Callable[..., BasecampClient], cli_records: Path
-) -> None:
-    _set_output([{"id": 1, "name": "skills", "type": "folder"}])
-    client = make_client(account_id="1")
-    await client.list_files(88)
-    await client.list_files(88, vault_id=100)
-
-    root, vault = read_cli_records(cli_records)
-    assert root["argv"] == ["files", "list", "--in", "88", "--json"]
-    assert vault["argv"] == ["files", "list", "--in", "88", "--vault", "100", "--json"]
-
-
-async def test_download_file_command(
-    make_client: Callable[..., BasecampClient], cli_records: Path, tmp_path: Path
-) -> None:
-    _set_output({"path": "x"})
-    client = make_client(account_id="1")
-    out = tmp_path / "out"
-    await client.download_file(7, 88, out)
-
-    (rec,) = read_cli_records(cli_records)
-    assert rec["argv"] == ["files", "download", "7", "--in", "88", "--out", str(out), "--json"]
-
-
 async def test_create_comment_threads_project(
     make_client: Callable[..., BasecampClient], cli_records: Path
 ) -> None:
     _set_output({"id": 1})
     client = make_client(account_id="1")
-    await client.create_comment(42, "Готово", project_id=88)
+    assert await client.create_comment(42, "Готово", project_id=88) == 1
 
     (rec,) = read_cli_records(cli_records)
     assert rec["argv"] == ["comments", "create", "42", "Готово", "--in", "88", "--json"]
+
+
+async def test_list_boosts_command(
+    make_client: Callable[..., BasecampClient], cli_records: Path
+) -> None:
+    _set_output([{"content": "👍", "creator": {"id": 99}}])
+    client = make_client(account_id="1")
+    boosts = await client.list_boosts(500, 88)
+
+    assert boosts == [{"content": "👍", "creator": {"id": 99}}]
+    (rec,) = read_cli_records(cli_records)
+    assert rec["argv"] == ["boost", "list", "500", "--in", "88", "--json"]

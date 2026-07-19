@@ -48,6 +48,12 @@ services:
     stdin_open: true
     tty: true
     environment:
+      # The raw `basecamp` CLI locates credentials via XDG_CONFIG_HOME (it reads
+      # $XDG_CONFIG_HOME/basecamp), the same way BasecampClient._env() sets it for
+      # the worker. Point it at /data so the login persists to /data/basecamp on
+      # the shared volume; without this the creds land in the container's default
+      # config dir and vanish with `--rm`.
+      XDG_CONFIG_HOME: /data
       BASECAMP_NO_KEYRING: "1"
     entrypoint:
       - basecamp

@@ -19,7 +19,6 @@ from .codesave import CodeSaveManager
 from .config import ACCEPTED_MESSAGE, COMPLETED_MESSAGE, Config
 from .db import STATUS_CLAIMED, Database
 from .followup import FollowupManager
-from .sync import Syncer
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ class Poller:
         client: BasecampClient,
         db: Database,
         runner: ClaudeRunner,
-        syncer: Syncer,
         codesave: CodeSaveManager,
         followup: FollowupManager,
     ):
@@ -41,7 +39,6 @@ class Poller:
         self._client = client
         self._db = db
         self._runner = runner
-        self._syncer = syncer
         self._codesave = codesave
         self._followup = followup
         self._sem = asyncio.Semaphore(max(1, config.task_max_concurrency))
@@ -51,8 +48,6 @@ class Poller:
         self._followup_task: asyncio.Task | None = None
         self._codesave_task: asyncio.Task | None = None
         # Cadence gates (event-loop clock); 0 means "run on the first tick".
-        self._next_sync = 0.0
-        self._next_claude_md = 0.0
         self._next_comment_poll = 0.0
         self._next_codesave = 0.0
 
@@ -123,12 +118,9 @@ class Poller:
     async def _poll_once(self, stop: asyncio.Event) -> None:
         """Fetch assigned to-dos, dispatch new ones, and run periodic concerns."""
         todos = self._filter_project(await self._client.assigned_todos())
-        child_ids = await self._db.child_todo_ids()
         for todo in todos:
             if stop.is_set():
                 return
-            if todo.id in child_ids:
-                continue  # a code-save under-to-do, never a real task
             await self._process_todo(todo)
 
         await self._run_periodic(stop)
@@ -144,29 +136,13 @@ class Poller:
         return bucket_id or self._config.basecamp_project_id
 
     async def _run_periodic(self, stop: asyncio.Event) -> None:
-        """Run sync / CLAUDE.md refresh / follow-up / code-save on their cadences.
+        """Run the follow-up and code-save ticks on their cadences.
 
-        Sync is short (bounded by the Basecamp CLI timeout) and runs inline. The
-        follow-up and code-save ticks can each invoke ``claude`` for minutes, so
-        they are launched as background tasks and skipped while a prior run is
-        still in flight — the poll loop must stay responsive to new to-dos.
+        Both ticks can each invoke ``claude`` for minutes, so they are launched as
+        background tasks and skipped while a prior run is still in flight — the
+        poll loop must stay responsive to new to-dos.
         """
-        pid = self._config.basecamp_project_id
         now = asyncio.get_running_loop().time()
-
-        if pid and now >= self._next_sync:
-            try:
-                await self._syncer.sync_project(pid)
-            except BasecampError:
-                logger.warning("Docs & Files sync failed; will retry", exc_info=True)
-            self._next_sync = now + self._config.sync_interval_seconds
-
-        if pid and now >= self._next_claude_md:
-            try:
-                await self._syncer.sync_claude_md(pid)
-            except BasecampError:
-                logger.warning("CLAUDE.md refresh failed; will retry", exc_info=True)
-            self._next_claude_md = now + self._config.claude_md_refresh_seconds
 
         if now >= self._next_comment_poll:
             self._next_comment_poll = now + self._config.comment_poll_seconds

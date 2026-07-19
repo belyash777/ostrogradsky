@@ -84,12 +84,11 @@ async def test_synced_files_upsert_and_delete(db: Database) -> None:
 async def test_code_save_flow_crud(db: Database) -> None:
     await db.create_flow(9, 55, "sid", "2026-01-01T00:00:00+00:00")
     await db.create_flow(9, 55, "sid", "later")  # INSERT OR IGNORE: no duplicate
-    await db.set_flow_prompts(9, 501, 502)
+    await db.set_flow_prompt(9, 777, "2026-01-08T00:00:00+00:00")
 
     (flow,) = await db.flows_in_stage(FLOW_PROMPTS_CREATED)
-    assert flow.save_todo_id == 501
-    assert flow.discard_todo_id == 502
-    assert await db.child_todo_ids() == {501, 502}
+    assert flow.prompt_comment_id == 777
+    assert flow.reply_deadline == "2026-01-08T00:00:00+00:00"
 
 
 async def test_active_done_todos_excludes_flowed(db: Database) -> None:

@@ -67,8 +67,8 @@ class CodeSaveFlow:
     session_id: str
     stage: str
     prompt_due_at: str
-    save_todo_id: int | None
-    discard_todo_id: int | None
+    prompt_comment_id: int | None
+    reply_deadline: str | None
 
 
 def _now() -> str:
@@ -358,7 +358,7 @@ class Database:
         def _query() -> list[CodeSaveFlow]:
             rows = self.connection.execute(
                 "SELECT todo_id, project_id, session_id, stage, prompt_due_at, "
-                "save_todo_id, discard_todo_id FROM code_save_flow WHERE stage = ? "
+                "prompt_comment_id, reply_deadline FROM code_save_flow WHERE stage = ? "
                 "ORDER BY todo_id",
                 (stage,),
             ).fetchall()
@@ -369,8 +369,8 @@ class Database:
                     session_id=str(r[2]),
                     stage=str(r[3]),
                     prompt_due_at=str(r[4]),
-                    save_todo_id=None if r[5] is None else int(r[5]),
-                    discard_todo_id=None if r[6] is None else int(r[6]),
+                    prompt_comment_id=None if r[5] is None else int(r[5]),
+                    reply_deadline=None if r[6] is None else str(r[6]),
                 )
                 for r in rows
             ]
@@ -378,17 +378,17 @@ class Database:
         async with self._lock:
             return await asyncio.to_thread(_query)
 
-    async def set_flow_prompts(
-        self, todo_id: int, save_todo_id: int, discard_todo_id: int
+    async def set_flow_prompt(
+        self, todo_id: int, prompt_comment_id: int, reply_deadline: str
     ) -> None:
-        """Record the two under-to-dos and advance the flow to prompts_created."""
+        """Record the posted prompt comment and advance the flow to prompts_created."""
 
         def _update() -> None:
             with self.connection as conn:
                 conn.execute(
-                    "UPDATE code_save_flow SET stage = ?, save_todo_id = ?, discard_todo_id = ? "
-                    "WHERE todo_id = ?",
-                    (FLOW_PROMPTS_CREATED, save_todo_id, discard_todo_id, todo_id),
+                    "UPDATE code_save_flow SET stage = ?, prompt_comment_id = ?, "
+                    "reply_deadline = ? WHERE todo_id = ?",
+                    (FLOW_PROMPTS_CREATED, prompt_comment_id, reply_deadline, todo_id),
                 )
 
         async with self._lock:
@@ -433,25 +433,3 @@ class Database:
 
         async with self._lock:
             await asyncio.to_thread(_update)
-
-    async def child_todo_ids(self) -> set[int]:
-        """Return every under-to-do id created by the code-save flow.
-
-        The poller skips these so the "save/discard" prompts are never ingested
-        and driven through claude as if they were real tasks.
-        """
-
-        def _query() -> set[int]:
-            rows = self.connection.execute(
-                "SELECT save_todo_id, discard_todo_id FROM code_save_flow"
-            ).fetchall()
-            ids: set[int] = set()
-            for save_id, discard_id in rows:
-                if save_id is not None:
-                    ids.add(int(save_id))
-                if discard_id is not None:
-                    ids.add(int(discard_id))
-            return ids
-
-        async with self._lock:
-            return await asyncio.to_thread(_query)

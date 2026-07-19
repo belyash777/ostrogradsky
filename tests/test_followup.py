@@ -18,8 +18,8 @@ class FakeClient:
         self.comments: dict[int, list[dict]] = {}
         self.posted: list[tuple[int, str, int | None]] = []
 
-    async def auth_status(self) -> dict:
-        return {"authenticated": True, "user_id": WORKER_ID}
+    async def whoami(self) -> str | None:
+        return WORKER_ID
 
     async def list_comments(self, todo_id: int, project_id: int) -> list[dict]:
         return list(self.comments.get(todo_id, []))

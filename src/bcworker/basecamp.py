@@ -59,22 +59,6 @@ def _extract_todos(data: object) -> list[dict]:
     return []
 
 
-def _extract_files(data: object) -> list[dict]:
-    """Pull the list of Docs & Files entries out of a `files list` envelope.
-
-    The CLI may serialise ``data`` as a bare list or as an object with an
-    ``entries``/``files`` key, so all shapes are accepted.
-    """
-    if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
-    if isinstance(data, dict):
-        for key in ("entries", "files"):
-            value = data.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-    return []
-
-
 def _coerce_int(value: object) -> int:
     """Return an int for a real int value (rejecting bool), else 0."""
     if isinstance(value, int) and not isinstance(value, bool):
@@ -231,6 +215,26 @@ class BasecampClient:
             return False
         return bool(status.get("authenticated"))
 
+    async def whoami(self) -> str | None:
+        """Return the CLI account's own person id (via ``people show me``).
+
+        Used to identify the worker's own comments so follow-up polling can skip
+        them. ``auth status`` does not expose a person id, so resolve it here.
+        Returns None if it cannot be determined.
+        """
+        try:
+            data = await self._run("people", "show", "me")
+        except BasecampError:
+            logger.warning("Could not resolve worker person id via `people show me`", exc_info=True)
+            return None
+        if isinstance(data, dict):
+            person_id = data.get("id")
+            if isinstance(person_id, int) and not isinstance(person_id, bool):
+                return str(person_id)
+            if isinstance(person_id, str) and person_id.strip():
+                return person_id.strip()
+        return None
+
     async def list_accounts(self) -> list[dict]:
         """Return the accounts the authenticated user can access."""
         data = await self._run("accounts", "list")
@@ -273,20 +277,30 @@ class BasecampClient:
 
     async def create_comment(
         self, todo_id: int, text: str, project_id: int | None = None
-    ) -> None:
-        """Post a comment onto the given to-do (recording)."""
+    ) -> int | None:
+        """Post a comment onto the given to-do (recording); return its id if known."""
         args = ["comments", "create", str(todo_id), text]
         if project_id:
             args += ["--in", str(project_id)]
-        await self._run(*args)
+        data = await self._run(*args)
+        if isinstance(data, dict):
+            new_id = data.get("id")
+            if isinstance(new_id, int) and not isinstance(new_id, bool):
+                return new_id
+        return None
 
     async def list_comments(self, recording_id: int, project_id: int) -> list[dict]:
         """Return the comments on a recording (to-do), oldest-to-newest per the CLI."""
         data = await self._run("comments", "list", str(recording_id), "--in", str(project_id))
         return [c for c in data if isinstance(c, dict)] if isinstance(data, list) else []
 
+    async def list_boosts(self, recording_id: int, project_id: int) -> list[dict]:
+        """Return the boosts (emoji/short-note reactions) on a recording."""
+        data = await self._run("boost", "list", str(recording_id), "--in", str(project_id))
+        return [b for b in data if isinstance(b, dict)] if isinstance(data, list) else []
+
     async def list_todos(self, project_id: int) -> list[Todo]:
-        """List the to-dos in a project (used to make child-to-do creation idempotent)."""
+        """List the to-dos in a project."""
         data = await self._run("todos", "list", "--in", str(project_id))
         todos: list[Todo] = []
         for raw in _extract_todos(data):
@@ -328,17 +342,3 @@ class BasecampClient:
         if not isinstance(new_id, int) or isinstance(new_id, bool):
             raise BasecampError(f"todos create did not return an id: {data!r}")
         return new_id
-
-    async def list_files(self, project_id: int, vault_id: int | None = None) -> list[dict]:
-        """List Docs & Files entries in a project (or inside a given folder/vault)."""
-        args = ["files", "list", "--in", str(project_id)]
-        if vault_id:
-            args += ["--vault", str(vault_id)]
-        data = await self._run(*args)
-        return _extract_files(data)
-
-    async def download_file(self, file_id: int, project_id: int, out_dir: Path) -> None:
-        """Download an uploaded file into ``out_dir``."""
-        await self._run(
-            "files", "download", str(file_id), "--in", str(project_id), "--out", str(out_dir)
-        )

@@ -35,7 +35,11 @@ def test_applies_repo_migrations(raw_conn: sqlite3.Connection) -> None:
 def test_is_idempotent(raw_conn: sqlite3.Connection) -> None:
     first = apply_migrations(raw_conn)
     second = apply_migrations(raw_conn)
-    assert set(first) == {"0001_init", "0002_claude_feature"}
+    assert set(first) == {
+        "0001_init",
+        "0002_claude_feature",
+        "0003_codesave_comment_prompt",
+    }
     assert second == []  # nothing new applied on the second run
 
 

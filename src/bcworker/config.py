@@ -70,16 +70,13 @@ class Config:
     claude_config_dir: Path = Path("/data/claude")
     claude_permission_mode: str = "acceptEdits"
 
-    # Docs & Files sync.
-    skills_folder_name: str = "skills"
-    documents_folder_name: str = "documents"
-    sync_interval_seconds: int = 60
-    claude_md_refresh_seconds: int = 1800
-
     # Follow-up edits and the code-save lifecycle.
     comment_poll_seconds: int = 30
     codesave_poll_seconds: int = 30
     code_save_delay_seconds: int = 300
+    # How long to wait for the customer's answer to the "save the code?" prompt
+    # before giving up (and not saving). Default: 7 days.
+    code_save_reply_timeout_seconds: int = 604800
     task_max_concurrency: int = 1
 
     @classmethod
@@ -109,14 +106,11 @@ class Config:
             claude_permission_mode=(
                 os.environ.get("CLAUDE_PERMISSION_MODE", "acceptEdits").strip() or "acceptEdits"
             ),
-            skills_folder_name=os.environ.get("SKILLS_FOLDER_NAME", "skills").strip() or "skills",
-            documents_folder_name=(
-                os.environ.get("DOCUMENTS_FOLDER_NAME", "documents").strip() or "documents"
-            ),
-            sync_interval_seconds=_get_int("SYNC_INTERVAL_SECONDS", 60),
-            claude_md_refresh_seconds=_get_int("CLAUDE_MD_REFRESH_SECONDS", 1800),
             comment_poll_seconds=_get_int("COMMENT_POLL_SECONDS", 30),
             codesave_poll_seconds=_get_int("CODESAVE_POLL_SECONDS", 30),
             code_save_delay_seconds=_get_int("CODE_SAVE_DELAY_SECONDS", 300),
+            code_save_reply_timeout_seconds=_get_int(
+                "CODE_SAVE_REPLY_TIMEOUT_SECONDS", 604800
+            ),
             task_max_concurrency=_get_int("TASK_MAX_CONCURRENCY", 1),
         )

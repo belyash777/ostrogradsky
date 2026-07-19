@@ -17,7 +17,6 @@ from .config import Config
 from .db import Database
 from .followup import FollowupManager
 from .poller import Poller
-from .sync import Syncer
 from .workspace import ensure_workspace
 
 
@@ -70,11 +69,10 @@ async def main() -> None:
             timeout_seconds=config.claude_timeout_seconds,
             permission_mode=config.claude_permission_mode,
         )
-        syncer = Syncer(client, db, config)
         codesave = CodeSaveManager(client, db, runner, config)
         followup = FollowupManager(client, db, runner, config)
 
-        poller = Poller(config, client, db, runner, syncer, codesave, followup)
+        poller = Poller(config, client, db, runner, codesave, followup)
         logger.info("Worker started (poll interval: %ss)", config.poll_interval_seconds)
         await poller.run(stop)
     finally:
