@@ -57,7 +57,7 @@ def test_claude_and_sync_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.claude_bin == "claude"
     assert cfg.claude_timeout_seconds == 900
     assert cfg.claude_workspace_dir == Path("/data/workspace")
-    assert cfg.code_save_delay_seconds == 300
+    assert cfg.code_save_delay_seconds == 60
     assert cfg.task_max_concurrency == 1
 
 

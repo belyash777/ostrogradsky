@@ -31,8 +31,9 @@ directly.
 Around that core the worker also:
 - **Handles follow-up edits**: a new customer comment on a finished to-do resumes that task's
   claude session and posts an updated answer.
-- **Offers to save code**: five minutes after the customer completes a task, the worker posts one
-  comment asking whether to save the code it used. The answer is read from the customer's reply —
+- **Offers to save code**: a short delay after the customer completes a task
+  (`CODE_SAVE_DELAY_SECONDS`, default 60s), the worker posts one comment asking whether to save the
+  code it used. The answer is read from the customer's reply —
   a reply comment (a word like "так"/"ні" or an emoji) or a boost (reaction) on the prompt;
   [`decision.py`](src/bcworker/decision.py) maps it to save / discard / unclear (discard wins ties,
   silence past a deadline discards). On "save" the session is resumed so Claude stores the

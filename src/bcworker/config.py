@@ -73,7 +73,7 @@ class Config:
     # Follow-up edits and the code-save lifecycle.
     comment_poll_seconds: int = 30
     codesave_poll_seconds: int = 30
-    code_save_delay_seconds: int = 300
+    code_save_delay_seconds: int = 60
     # How long to wait for the customer's answer to the "save the code?" prompt
     # before giving up (and not saving). Default: 7 days.
     code_save_reply_timeout_seconds: int = 604800
@@ -108,7 +108,7 @@ class Config:
             ),
             comment_poll_seconds=_get_int("COMMENT_POLL_SECONDS", 30),
             codesave_poll_seconds=_get_int("CODESAVE_POLL_SECONDS", 30),
-            code_save_delay_seconds=_get_int("CODE_SAVE_DELAY_SECONDS", 300),
+            code_save_delay_seconds=_get_int("CODE_SAVE_DELAY_SECONDS", 60),
             code_save_reply_timeout_seconds=_get_int(
                 "CODE_SAVE_REPLY_TIMEOUT_SECONDS", 604800
             ),
