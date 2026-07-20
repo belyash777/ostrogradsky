@@ -4,7 +4,10 @@ Guidance for Claude Code (and other agents) working in this repository.
 
 ## Language
 
-- **Chat / conversation: Ukrainian only.**
+- **Chat / conversation: Ukrainian only — every reply, without exception.** All explanatory prose
+  you write back to the user must be exclusively in Ukrainian. Never mix in English sentences.
+  The only tokens that stay as-is are technical values that are not prose: file names, shell
+  commands, identifiers, code, log lines, table/column names.
 - **Code comments and string literals: English only.**
 - Messages posted into Basecamp to-dos are Ukrainian (they are text for people).
 

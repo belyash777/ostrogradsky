@@ -18,7 +18,9 @@
       "env": {
         "SPARK_HOST": "${SPARK_HOST}",
         "SPARK_PORT": "${SPARK_PORT}",
-        "SPARK_USER": "${SPARK_USER}",
+        "SPARK_DATABASE": "${SPARK_DATABASE}",
+        "SPARK_AUTH": "${SPARK_AUTH}",
+        "SPARK_USERNAME": "${SPARK_USERNAME}",
         "SPARK_PASSWORD": "${SPARK_PASSWORD}"
       }
     }

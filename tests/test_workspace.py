@@ -25,6 +25,7 @@ def test_creates_layout_and_seeds_template(
     (template / "CLAUDE.md").write_text("baked guidance", encoding="utf-8")
     (template / ".mcp.json").write_text("{}", encoding="utf-8")
     (template / "documents" / "MYSQL.md").write_text("baked mysql", encoding="utf-8")
+    (template / "documents" / "SPARK.md").write_text("baked spark", encoding="utf-8")
     monkeypatch.setenv("WORKSPACE_TEMPLATE_DIR", str(template))
 
     ensure_workspace(_config(tmp_path))
@@ -37,26 +38,33 @@ def test_creates_layout_and_seeds_template(
     assert (ws / "CLAUDE.md").read_text() == "baked guidance"
     assert (ws / ".mcp.json").read_text() == "{}"
     assert (ws / "documents" / "MYSQL.md").read_text() == "baked mysql"
+    assert (ws / "documents" / "SPARK.md").read_text() == "baked spark"
 
 
-def test_refreshes_claude_md_and_mysql_from_template(
+def test_refreshes_claude_md_and_docs_from_template(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     template = tmp_path / "template"
     (template / "documents").mkdir(parents=True)
     (template / "CLAUDE.md").write_text("new guidance", encoding="utf-8")
     (template / "documents" / "MYSQL.md").write_text("new mysql", encoding="utf-8")
+    (template / "documents" / "SPARK.md").write_text("new spark", encoding="utf-8")
     monkeypatch.setenv("WORKSPACE_TEMPLATE_DIR", str(template))
 
     ws = tmp_path / "workspace"
     (ws / "documents").mkdir(parents=True)
     (ws / "CLAUDE.md").write_text("stale guidance", encoding="utf-8")
     (ws / "documents" / "MYSQL.md").write_text("stale mysql", encoding="utf-8")
+    (ws / "documents" / "SPARK.md").write_text("stale spark", encoding="utf-8")
+    # A hand-added document with no template counterpart must survive.
+    (ws / "documents" / "LOCAL.md").write_text("hand-added", encoding="utf-8")
 
     ensure_workspace(_config(tmp_path))
 
     assert (ws / "CLAUDE.md").read_text() == "new guidance"
     assert (ws / "documents" / "MYSQL.md").read_text() == "new mysql"
+    assert (ws / "documents" / "SPARK.md").read_text() == "new spark"
+    assert (ws / "documents" / "LOCAL.md").read_text() == "hand-added"
 
 
 def test_refreshes_skills_dir_from_template(

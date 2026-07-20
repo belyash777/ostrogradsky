@@ -10,10 +10,12 @@ Two seeding policies:
   (e.g. ``.mcp.json`` may carry hand-tuned MCP credentials).
 * ``_REFRESH_FILES`` are copied on **every** start, overwriting the workspace
   copy from the baked template. This is how ``docker compose up --build`` pushes
-  an updated ``CLAUDE.md`` / ``documents/MYSQL.md`` into ``./data``.
-* ``_REFRESH_DIRS`` are merged over the workspace copy on **every** start (e.g.
-  the ``skills`` template dir into ``.claude/skills``); existing workspace-only
-  files are left in place, template files win on conflicts.
+  an updated ``CLAUDE.md`` into ``./data``.
+* ``_REFRESH_DIRS`` are merged over the workspace copy on **every** start (the
+  whole ``documents`` and ``skills`` template dirs, so any file placed there —
+  ``MYSQL.md``, ``SPARK.md``, a new skill — is picked up without touching this
+  module); existing workspace-only files are left in place, template files win
+  on conflicts.
 """
 
 from __future__ import annotations
@@ -31,9 +33,9 @@ DEFAULT_TEMPLATE_DIR = Path("/app/workspace-template")
 # Copied only when the destination does not yet exist.
 _SEED_FILES = (".mcp.json",)
 # Copied on every start, overwriting the workspace copy from the template.
-_REFRESH_FILES = ("CLAUDE.md", "documents/MYSQL.md")
+_REFRESH_FILES = ("CLAUDE.md",)
 # (template dir, workspace dir): merged over the workspace copy on every start.
-_REFRESH_DIRS = (("skills", ".claude/skills"),)
+_REFRESH_DIRS = (("documents", "documents"), ("skills", ".claude/skills"))
 
 
 def template_dir() -> Path:
