@@ -1,7 +1,9 @@
 # Working with Apache Spark / Hadoop
 
 You write and run **read-only** SparkSQL queries (and PySpark where appropriate) through the
-`spark-sql` MCP server, and save reusable query scripts under `results/` for later tasks.
+`spark-sql` MCP server. Reusable query scripts may later be saved under `results/`, but **only after
+the customer explicitly confirms it** — never on your own initiative (see *Saving and reusing
+scripts*).
 
 ## Accessing Spark (MCP)
 
@@ -14,40 +16,60 @@ You write and run **read-only** SparkSQL queries (and PySpark where appropriate)
 - Some datasets have separate **test / sandbox** topics under `hdfs://hadoop:9000/topics_test/...`.
   Use production topics unless the task is explicitly about sandbox data.
 
-## Read topics directly (temporary views)
+## Read topics directly (file-source SELECT)
 
 **Prefer querying the HDFS topic path directly** over relying on any pre-registered metastore table.
 The raw topic data is clean and its layout is known; what a named table actually points at is not
-guaranteed. Register the topic path as a `TEMPORARY VIEW` and query that view:
+guaranteed.
+
+The `spark-sql` MCP server is **strictly read-only**: it accepts a statement only when its first
+keyword is `SELECT`, `SHOW`, `DESCRIBE`, `DESC`, `EXPLAIN`, or `WITH`. Anything starting with
+`CREATE`, `SET`, `USE`, `ADD JAR`, etc. is rejected before it reaches Spark — so
+`CREATE TEMPORARY VIEW` does **not** work here. Read the path directly with the file-source syntax
+`FROM <format>.\`<path>\`` inside a plain `SELECT` (or `WITH`), which passes the read-only filter:
 
 ```sql
-CREATE OR REPLACE TEMPORARY VIEW com_events
-    USING org.apache.spark.sql.parquet
-    OPTIONS (
-        PATH 'hdfs://hadoop:9000/topics/communicationEvents_avro/'
-    );
+SELECT typeid, userid, actiondatetime
+FROM parquet.`hdfs://hadoop:9000/topics/communicationEvents_avro/`
+LIMIT 100;
 ```
 
-Point the `PATH` at the deepest directory you need. On a partitioned topic, drill straight into the
-partition folders (`year=YYYY/month=MM/day=DD/`) instead of scanning the whole topic, and add
-`mergeSchema TRUE` when the files under the path may carry slightly different schemas:
+Point the path at the deepest directory you need. On a partitioned topic, drill straight into the
+partition folders (`year=YYYY/month=MM/day=DD/`) instead of scanning the whole topic:
 
 ```sql
-CREATE OR REPLACE TEMPORARY VIEW new_analytics
-    USING org.apache.spark.sql.parquet
-    OPTIONS (
-        PATH 'hdfs://hadoop:9000/topics/userEvents_avro/year=2022/month=02/day=09/',
-        mergeSchema TRUE
-    );
+SELECT userid, actionid, actiondatetime
+FROM parquet.`hdfs://hadoop:9000/topics/userEvents_avro/year=2022/month=02/day=09/`
+LIMIT 100;
 ```
 
-Then read only the columns you need from the view (`SELECT ... FROM new_analytics ... LIMIT ...`).
+`WITH` is also an allowed leading keyword, so CTEs over a file source work too:
+
+```sql
+WITH events AS (
+    SELECT userid, actiondatetime
+    FROM parquet.`hdfs://hadoop:9000/topics/userEvents_avro/year=2022/month=02/day=09/`
+)
+SELECT userid, COUNT(*) AS n FROM events GROUP BY userid LIMIT 100;
+```
+
+Notes:
+
+- Use the format matching the physical files: `parquet.\`...\`` or `avro.\`...\``. If one errors on
+  a path, try the other and confirm with a small `LIMIT` sample.
+- `SET` is blocked, so options like `spark.sql.parquet.mergeSchema` cannot be toggled per query.
+  Avoid schema-merge situations by reading a **single partition** (one `day=` folder) whose files
+  share one schema, rather than a whole multi-schema topic at once.
+- If a file-source `SELECT` still fails (not with a read-only rejection but a Spark/HDFS error), the
+  cause is access/permissions on the path from the Thrift server — that is a cluster-side config
+  issue, not something query syntax can work around. Report the exact error in your answer.
 
 ## Before you write a query
 
-1. **Never guess columns** — register the topic as a temporary view (see above) and confirm columns
-   with `DESCRIBE <view>` or by reading a small sample; the attribute lists below are a map of the
-   domain, not a substitute for the live schema.
+1. **Never guess columns** — confirm them against the live data: `DESCRIBE parquet.\`<path>\`` (a
+   `DESCRIBE` is allowed by the read-only filter), or read a small `SELECT ... LIMIT` sample from the
+   file source; the attribute lists below are a map of the domain, not a substitute for the live
+   schema.
 2. **Iterate small** — draft the query, test it with a small `LIMIT`, then scale up.
 3. **Mind the earliest data** — see the collection start dates in *Data collection notes*; a range
    before them returns nothing.
@@ -228,8 +250,11 @@ Your stdout is posted back to a person, so make it self-contained: state the num
 
 ## Saving and reusing scripts
 
+- **Never save on your own initiative.** Finishing a task and printing the answer must not write
+  anything to `results/` or touch `results/INDEX.md`. Saving happens **only after the customer
+  explicitly confirms it** (the worker's post-completion code-save prompt).
 - Before starting, check `results/INDEX.md` for a script saved from a similar past task; if one fits,
   read it in `results/` and adapt it instead of starting from scratch.
-- When asked to save a result, write the query/analysis script to `results/<name>.py` (PySpark) or
-  `results/<name>.sql` (SparkSQL), begin the file with a short English comment describing what it
+- **Only once save is confirmed**, write the query/analysis script to `results/<name>.py` (PySpark)
+  or `results/<name>.sql` (SparkSQL), begin the file with a short English comment describing what it
   does, and add a one-line entry to `results/INDEX.md`: `file_name — short description`.

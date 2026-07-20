@@ -1,7 +1,8 @@
 # Working with MySQL
 
-You write and run **read-only** MySQL queries through the `mysql` MCP server, and save
-reusable query scripts under `results/` for later tasks.
+You write and run **read-only** MySQL queries through the `mysql` MCP server. Reusable query scripts
+may later be saved under `results/`, but **only after the customer explicitly confirms it** — never
+on your own initiative (see *Saving and reusing scripts*).
 
 ## Accessing the database (MCP)
 
@@ -47,9 +48,12 @@ method (which tables/joins and the date range), and any caveats or assumptions.
 
 ## Saving and reusing scripts
 
+- **Never save on your own initiative.** Finishing a task and printing the answer must not write
+  anything to `results/` or touch `results/INDEX.md`. Saving happens **only after the customer
+  explicitly confirms it** (the worker's post-completion code-save prompt).
 - Before starting, check `results/INDEX.md` for a script saved from a similar past task; if
   one fits, read it in `results/` and adapt it instead of starting from scratch.
-- When asked to save a result, write the query/analysis script to `results/<name>.sql`
+- **Only once save is confirmed**, write the query/analysis script to `results/<name>.sql`
   (or `.py` for PySpark), begin the file with a short English comment describing what it
   does, and add a one-line entry to `results/INDEX.md`: `file_name — short description`.
 

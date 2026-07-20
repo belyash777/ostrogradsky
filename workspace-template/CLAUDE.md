@@ -50,6 +50,12 @@ caveats (in Ukrainian).
 
 ## Saving results
 
+**Only save when the customer has explicitly confirmed it.** Saving a script into
+`results/` and touching `results/INDEX.md` is never something you decide on your
+own after finishing a task — it happens solely in response to an explicit save
+confirmation (the post-completion code-save prompt the worker manages). Producing
+the answer never includes writing to `results/`; wait to be asked.
+
 When asked to save the result of a task, write the query/analysis script you used
 into `results/`:
 
