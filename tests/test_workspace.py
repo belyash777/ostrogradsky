@@ -59,6 +59,28 @@ def test_refreshes_claude_md_and_mysql_from_template(
     assert (ws / "documents" / "MYSQL.md").read_text() == "new mysql"
 
 
+def test_refreshes_skills_dir_from_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = tmp_path / "template"
+    (template / "skills" / "demo").mkdir(parents=True)
+    (template / "skills" / "demo" / "SKILL.md").write_text("new skill", encoding="utf-8")
+    monkeypatch.setenv("WORKSPACE_TEMPLATE_DIR", str(template))
+
+    ws = tmp_path / "workspace"
+    skills = ws / ".claude" / "skills"
+    (skills / "demo").mkdir(parents=True)
+    (skills / "demo" / "SKILL.md").write_text("stale skill", encoding="utf-8")
+    (skills / "local" / "SKILL.md").parent.mkdir(parents=True)
+    (skills / "local" / "SKILL.md").write_text("hand-added", encoding="utf-8")
+
+    ensure_workspace(_config(tmp_path))
+
+    # Template wins on conflicts, workspace-only skills survive.
+    assert (skills / "demo" / "SKILL.md").read_text() == "new skill"
+    assert (skills / "local" / "SKILL.md").read_text() == "hand-added"
+
+
 def test_seeds_mcp_json_only_when_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
